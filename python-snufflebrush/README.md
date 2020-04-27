@@ -15,6 +15,6 @@ Specify -e for **encoding**, -d for **decoding**.
 -p password which will be used to extract the file  
 
 ### Installation
-  pip install -r requirements.txt
+    pip install -r requirements.txt  
 That's it :)
 Python version is simple, hah
