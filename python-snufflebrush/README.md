@@ -1,6 +1,6 @@
 ### Usage:  
-  ./snufflebrush -e -i <input> -o <output> -f <file> -p <password>  
-  ./snufflebrush -d -i <input> -o <output> -p <password>  
+  ./snufflebrush -e -i \<input> -o \<output> -f \<file> -p \<password>  
+  ./snufflebrush -d -i \<input> -o \<output> -p \<password>  
   
 Specify -e for **encoding**, -d for **decoding**.  
 #### Encoding:  
