@@ -1,0 +1,5 @@
+bitarray
+numpy
+opencv-python
+zstd
+filetype

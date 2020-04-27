@@ -1,0 +1,155 @@
+#! /usr/bin/env python3
+# coding:UTF-8
+
+"""snufflebrush
+
+Usage:
+  snufflebrush -e -i <input> -o <output> -f <file> -p <password>
+  snufflebrush -d -i <input> -o <output> -p <password>
+
+Options:
+  -h, --help                        Show this help message.
+  -e, --encode                      Set mode to encoding.
+  -d, --decode                      Set mode to decoding.
+  -i <input>, --input <input>       Base image (carrier).
+  -o <output>, --output <output>    Result image (or extracted file).
+  -f <file>, --file <file>          File to hide (for encode mode).
+  -p <password>, --pass <password>  Use specified password.
+"""
+
+from lzma import compress, decompress
+from docopt import docopt
+from genseeds import seedgen
+from bitarray import bitarray
+import cv2
+from PIL import Image
+from timeit import default_timer as timer
+
+class yozhStegException(Exception):	
+	pass
+
+class yozhSteg:
+	def __init__(self, img, password):
+		self.image = img
+		self.height, self.width, self.nch = img.shape
+		self.size = img.size
+		self.layers = [set([]) for s in range(4)]
+		self.gen = seedgen(password)
+
+	def setbit(self, layer, x, y, chan):
+		val = list(self.image[y, x])
+		mask = 1<<layer
+		val[chan] |= mask
+		self.image[y, x] = tuple(val)
+
+	def rembit(self, layer, x, y, chan):
+		val = list(self.image[y, x])
+		mask = 0xff^(1<<layer)
+		val[chan] &= mask
+		self.image[y, x] = tuple(val)
+
+	def chbit(self, val, pixel):
+		layer, x, y, chan = val
+		if pixel == 1:
+			self.setbit(layer, x, y, chan)
+		else:
+			self.rembit(layer, x, y, chan)
+
+	def readbit(self, val):
+		layer, x, y, chan = val
+		val = self.image[y, x][chan]
+		mask = 1<<layer
+		val = 1 if (val&mask) else 0
+		return val
+
+	def checkvalid(self, datalen):
+		if self.size/2 < datalen:
+			raise yozhStegException("Carrier image not large enough to hold all the data.")
+			return False
+		elif len(self.layers[0]) > 0xffffff:
+			raise yozhStegException("Carrier image too large to encode using algorithm.")
+			return False
+		return True
+	
+	def getnextloc(self):
+		tempi = 1
+		while tempi or locval in self.layers[layer]:
+			tempi = 0
+			nextval = self.gen.gennext()
+			layerval = (nextval&0xff00000000000000)>>56
+			layer = 0 if layerval <= 0xff*0.5 else \
+				(1 if 0xff*0.5 < layerval <= 0xff*0.8 else \
+					(2 if 0xff*0.8 < layerval <= 0xff*0.95 else 3))
+			locval = (nextval&0x00ffffffffffffff)%self.size
+		self.layers[layer].add(locval)
+		pixelloc = locval//4
+		x, y = pixelloc%self.width, pixelloc//self.width
+		chan = locval%4
+		return (layer, x, y, chan)
+
+	def encode_binary(self, data):
+		compd = compress(data)
+		compbit = 0
+		if len(compd) < len(data):
+			data = compd
+			compbit = 1
+		datalen = len(data)
+		self.checkvalid(datalen)
+		datalen = datalen.to_bytes(4, byteorder='big')
+		databits = bitarray(endian='big')
+		databits.frombytes(datalen)
+		self.chbit(self.getnextloc(), compbit)
+		for b in databits:
+			self.chbit(self.getnextloc(), b)
+		bits = bitarray(endian='big')
+		bits.frombytes(data)
+		for b in bits:
+			self.chbit(self.getnextloc(), b)
+		return self.image
+	
+	def decode_binary(self):
+		self.checkvalid(0)
+		datalen = ''
+		bitstr = ''
+		compbit = self.readbit(self.getnextloc())
+		for b in range(32):
+			datalen += str(self.readbit(self.getnextloc()))
+		datalen = int(datalen, 2)
+		for b in range(datalen*8):
+			bitstr += str(self.readbit(self.getnextloc()))
+		resdata = bitarray(bitstr, endian='big')
+		res = resdata.tobytes()
+		if compbit:
+			res = decompress(res)
+		return res
+
+
+def main():
+	start = timer()
+	args = docopt(__doc__)
+
+	in_file = args["--input"]
+	out_file = args["--output"]
+	password = args["--pass"]
+	inp_img = cv2.imread(in_file, -1)
+	if len(inp_img.shape) < 3 or inp_img.shape[2] < 4:
+		inp_img = Image.open(in_file)
+		inp_img = inp_img.convert("RGBA")
+		inp_img.save(in_file)
+		inp_img = cv2.imread(in_file, -1)
+	yozh = yozhSteg(inp_img, password)
+
+	if args["--encode"]:
+		data = open(args["--file"], "rb").read()
+		res_img = yozh.encode_binary(data)
+		cv2.imwrite(out_file, res_img)
+
+	elif args["--decode"]:
+		raw_data = yozh.decode_binary()
+		with open(out_file, "wb+") as outp:
+			outp.write(raw_data)
+		end = timer()
+		print('Exec time:',end-start)
+
+if __name__=='__main__':
+    main()
