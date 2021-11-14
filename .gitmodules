@@ -1,0 +1,6 @@
+[submodule "libpng"]
+	path = libpng
+	url = https://github.com/glennrp/libpng
+[submodule "png++"]
+	path = png++
+	url = https://github.com/usagi/pngpp
